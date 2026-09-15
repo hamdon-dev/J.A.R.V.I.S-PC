@@ -4,11 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
-import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:local_auth/local_auth.dart';
 import 'package:mysql1/mysql1.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
@@ -168,6 +166,46 @@ class AndroidIntent {
   final String? type;
   const AndroidIntent({required this.action, this.arguments, this.type});
   Future<void> launch() async {}
+}
+
+
+// Windows: no local_auth / permission_handler native plugins (MSVC coroutine break on CI)
+class PermissionStatus {
+  final bool isGranted;
+  const PermissionStatus({this.isGranted = true});
+}
+
+class _Perm {
+  Future<PermissionStatus> get status async => const PermissionStatus(isGranted: true);
+  Future<PermissionStatus> request() async => const PermissionStatus(isGranted: true);
+}
+
+class Permission {
+  static final _Perm microphone = _Perm();
+  static final _Perm notification = _Perm();
+}
+
+class BiometricType {
+  static const weak = 'weak';
+  static const strong = 'strong';
+}
+
+class LocalAuthentication {
+  Future<bool> isDeviceSupported() async => false;
+  Future<bool> canCheckBiometrics() async => false;
+  Future<List<dynamic>> getAvailableBiometrics() async => [];
+  Future<bool> authenticate({
+    required String localizedReason,
+    bool biometricOnly = false,
+    dynamic options,
+  }) async =>
+      true;
+}
+
+class AuthenticationOptions {
+  final bool biometricOnly;
+  final bool stickyAuth;
+  const AuthenticationOptions({this.biometricOnly = false, this.stickyAuth = false});
 }
 
 class NotificationListenerService {
