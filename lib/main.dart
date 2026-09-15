@@ -30,8 +30,8 @@ const String kPrefProvider = 'pref_ai_provider'; // openai | grok | claude
 const String kOpenAiChatUrl = 'https://api.openai.com/v1/chat/completions';
 const String kGrokChatUrl = 'https://api.x.ai/v1/chat/completions';
 const String kClaudeMessagesUrl = 'https://api.anthropic.com/v1/messages';
-const String kDefaultGrokModel = 'grok-2-latest';
-const String kDefaultClaudeModel = 'claude-sonnet-4-20250514';
+const String kDefaultGrokModel = 'grok-3-latest';
+const String kDefaultClaudeModel = 'claude-sonnet-4-5-20250929';
 const String kEmailUserKey = 'email_user';
 const String kEmailPassKey = 'email_app_password';
 const String kRestartWebhookKey = 'fivem_restart_webhook';
@@ -54,6 +54,8 @@ const String kSpeechEndpoint = 'https://api.openai.com/v1/audio/speech';
 const String kBraveSearchEndpoint = 'https://api.search.brave.com/res/v1/web/search';
 
 const String kDefaultModel = 'gpt-4o-mini';
+const String kAppVersion = '2.3.0';
+const String kAppBuildLabel = 'J.A.R.V.I.S Desktop';
 const String kTtsModel = 'tts-1';
 const String kDefaultVoice = 'fable';
 const double kDefaultDeviceRate = 0.45;
@@ -1718,7 +1720,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   double _deviceRate = kDefaultDeviceRate;
   String _systemPromptExtra = '';
 
-  String _status = 'SYSTEM READY';
+  String _status = 'ONLINE · ${_provider.toUpperCase()}';
   String _lastWords = '';
   String _toolNote = '';
   double _voiceEnergy = 0.25; // for waveform
@@ -2039,6 +2041,11 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     _discordBotToken = await _storage.read(key: kDiscordBotTokenKey);
     _discordBotChannel = p.getString(kPrefDiscordBotChannel) ?? '';
     _discordBotName = p.getString(kPrefDiscordBotName) ?? 'J.A.R.V.I.S';
+    if (mounted) {
+      setState(() {
+        _status = 'ONLINE · ${_provider.toUpperCase()} · v$kAppVersion';
+      });
+    }
     try {
       final raw = p.getString(kPrefReminders);
       if (raw != null && raw.isNotEmpty) {
@@ -2240,7 +2247,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     if (mounted) {
       setState(() {
         _isSpeaking = false;
-        if (!_isProcessing && !_isListening) _status = 'SYSTEM READY';
+        if (!_isProcessing && !_isListening) _status = 'ONLINE · ${_provider.toUpperCase()}';
       });
     }
     if (_continuous && mounted && !_isProcessing && !_isListening) {
@@ -2338,7 +2345,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
       setState(() {
         _isSpeaking = false;
         _isListening = false;
-        if (!_isProcessing) _status = 'SYSTEM READY';
+        if (!_isProcessing) _status = 'ONLINE · ${_provider.toUpperCase()}';
       });
     }
   }
@@ -2445,6 +2452,19 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
       await intent.launch();
     } catch (e) {
       _addLog('system', 'Intent failed: $e');
+    }
+  }
+
+
+  Future<void> _ensureDesktopMic() async {
+    if (!kIsDesktop) return;
+    try {
+      final s = await Permission.microphone.status;
+      if (!s.isGranted) {
+        await Permission.microphone.request();
+      }
+    } catch (e) {
+      _addLog('system', 'Mic permission: $e');
     }
   }
 
@@ -2848,7 +2868,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     _history.clear();
     _uiLog.clear();
     setState(() {
-      _status = 'SYSTEM READY';
+      _status = 'ONLINE · ${_provider.toUpperCase()}';
       _toolNote = '';
     });
     _addLog('system', 'Conversation context cleared.');
@@ -3611,8 +3631,11 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     b.writeln(
         'Discord BOT (own account): discord_bot_test, discord_bot_send (channel message), discord_bot_dm (user id). This is separate from notification auto-reply. Speak as J.A.R.V.I.S when posting.');
     b.writeln(
-        'CODE WORKSPACE: workspace_list, workspace_write, workspace_read, workspace_delete. When asked to make code, ALWAYS save with workspace_write so files are stored locally on the phone. Tell the user the file path. They can open the Code folder button to share/export files. Prefer complete, runnable files. Coding model may be stronger than chat model.');
+        'CODE WORKSPACE: workspace_list, workspace_write, workspace_read, workspace_delete. When asked to make code, ALWAYS save with workspace_write so files are stored on this device. Tell the user the relative path. On desktop the Code folder button lists and shares paths. Prefer complete runnable files. Use GitHub tools when the user wants commits to a repo. Prefer complete, runnable files. Coding model may be stronger than chat model.');
     b.writeln('Be concise unless the user asks for detail.');
+    b.writeln(
+        'Platform: ${kIsWindows ? 'Windows desktop' : (kIsAndroid ? 'Android' : (kIsIOS ? 'iOS' : 'desktop'))}. '
+        'App $kAppVersion. Code files save locally via workspace_* tools.');
     if (_systemPromptExtra.isNotEmpty) {
       b.writeln('\nExtra instructions:\n$_systemPromptExtra');
     }
@@ -5012,6 +5035,32 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
       _requestNotificationPermission();
       return 'Opening Notification access, sir. Enable J.A.R.V.I.S on that list.';
     }
+    if (stripped == 'use openai' || stripped == 'switch to openai') {
+      _provider = 'openai';
+      _prefs?.setString(kPrefProvider, 'openai');
+      if (_model.contains('grok') || _model.contains('claude')) {
+        _model = kDefaultModel;
+        _prefs?.setString(kPrefModel, _model);
+      }
+      return 'Switched to OpenAI, sir. Model $_model.';
+    }
+    if (stripped == 'use grok' || stripped == 'switch to grok') {
+      _provider = 'grok';
+      _prefs?.setString(kPrefProvider, 'grok');
+      _model = kDefaultGrokModel;
+      _prefs?.setString(kPrefModel, _model);
+      return 'Switched to Grok, sir. Model $_model.';
+    }
+    if (stripped == 'use claude' || stripped == 'switch to claude') {
+      _provider = 'claude';
+      _prefs?.setString(kPrefProvider, 'claude');
+      _model = kDefaultClaudeModel;
+      _prefs?.setString(kPrefModel, _model);
+      return 'Switched to Claude, sir. Model $_model.';
+    }
+    if (stripped == 'which model' || stripped == 'what model' || stripped == 'provider status') {
+      return 'Provider $_providerLabel, model $_model, sir.';
+    }
     if (stripped == 'bot test' ||
         stripped == 'discord bot test' ||
         stripped == 'test discord bot') {
@@ -5175,7 +5224,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
       if (!mounted) return;
       setState(() {
         _isProcessing = false;
-        _status = 'SYSTEM READY';
+        _status = 'ONLINE · ${_provider.toUpperCase()}';
         _toolNote = '';
       });
       _addLog('assistant', reply);
@@ -6061,7 +6110,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   Text(
-                                    'SYSTEMS ONLINE — AWAITING INPUT',
+                                    'SYSTEMS ONLINE — $kAppBuildLabel v$kAppVersion',
                                     style: TextStyle(
                                       color: kJarvisCyan.withOpacity(0.28),
                                       fontSize: 10,
