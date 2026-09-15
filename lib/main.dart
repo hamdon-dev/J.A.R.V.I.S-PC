@@ -198,8 +198,8 @@ class FlutterForegroundTask {
     String? notificationText,
   }) async {}
   static Future<bool> get isRunningService async => false;
-  static void addTaskDataCallback(void Function(dynamic) cb) {}
-  static void removeTaskDataCallback(void Function(dynamic) cb) {}
+  static void addTaskDataCallback(Function cb) {}
+  static void removeTaskDataCallback(Function cb) {}
   static void sendDataToMain(dynamic data) {}
 }
 
@@ -253,14 +253,6 @@ class NotificationPriority {
   static const LOW = 0;
 }
 
-class TaskHandler {
-  void onStart(DateTime time, dynamic s) {}
-  void onRepeatEvent(DateTime time, dynamic s) {}
-  void onDestroy(DateTime time, dynamic s) {}
-  void onReceiveData(dynamic data) {}
-}
-
-class ServiceRequestSuccess {}
 
 bool get kIsAndroid => !kIsWeb && Platform.isAndroid;
 bool get kIsIOS => !kIsWeb && Platform.isIOS;
@@ -279,149 +271,35 @@ Map<String, dynamic> sanitizeToolSchema(dynamic schema) {
 // 24/7 FOREGROUND SERVICE
 // ---------------------------------------------------------------------------
 
-@pragma('vm:entry-point')
-void startJarvisCallback() {
-  FlutterForegroundTask.setTaskHandler(JarvisTaskHandler());
-}
-
-class JarvisTaskHandler extends TaskHandler {
-  bool _wasOnline = false;
-  Set<String> _prevPlayers = {};
-  int _offlineStreak = 0;
-  bool _autoFix = false;
-  bool _notifyJoins = true;
-  bool _notifyRestart = true;
-  String? _webhook;
-
-  @override
-  Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
-    final prefs = await SharedPreferences.getInstance();
-    _autoFix = prefs.getBool(kPrefFivemAutoFix) ?? false;
-    _notifyJoins = prefs.getBool(kPrefFivemNotifyJoins) ?? true;
-    _notifyRestart = prefs.getBool(kPrefFivemNotifyRestart) ?? true;
-    _prevPlayers = (prefs.getStringList(kPrefPrevPlayers) ?? []).toSet();
-    _webhook = prefs.getString('fivem_restart_webhook_plain');
-  }
-
-  @override
-  void onRepeatEvent(DateTime timestamp) async {
-    try {
-      final status = await _fetchStatus();
-      final online = status['online'] == true;
-      final players = <String>{};
-      if (status['players'] is List) {
-        for (final p in status['players']) {
-          players.add(p.toString());
-        }
-      }
-      final count = players.length;
-
-      await FlutterForegroundTask.updateService(
-        notificationTitle: online ? 'JARVIS · LDRP Online' : 'JARVIS · LDRP OFFLINE',
-        notificationText: online
-            ? '$count player${count == 1 ? '' : 's'} online'
-            : 'Server unreachable',
-      );
-
-      if (!online && _wasOnline) {
-        _offlineStreak = 1;
-        if (_notifyRestart) {
-          FlutterForegroundTask.sendDataToMain({
-            'type': 'fivem_event',
-            'event': 'offline',
-            'message': 'LDRP server appears to be offline.',
-          });
-        }
-        if (_autoFix && _webhook != null && _webhook!.isNotEmpty) {
-          await _callWebhook(_webhook!);
-        }
-      } else if (!online) {
-        _offlineStreak++;
-        if (_autoFix &&
-            _offlineStreak == 3 &&
-            _webhook != null &&
-            _webhook!.isNotEmpty) {
-          await _callWebhook(_webhook!);
-        }
-      }
-
-      if (online && !_wasOnline && _notifyRestart) {
-        FlutterForegroundTask.sendDataToMain({
-          'type': 'fivem_event',
-          'event': 'restart',
-          'message': 'LDRP server is back online. It may have just restarted.',
-        });
-      }
-
-      if (online && _notifyJoins && _prevPlayers.isNotEmpty) {
-        final newcomers = players.difference(_prevPlayers);
-        if (newcomers.isNotEmpty) {
-          final names = newcomers.take(4).join(', ');
-          final extra =
-              newcomers.length > 4 ? ' and ${newcomers.length - 4} more' : '';
-          FlutterForegroundTask.sendDataToMain({
-            'type': 'fivem_event',
-            'event': 'join',
-            'message': 'Player joined LDRP: $names$extra.',
-          });
-        }
-      }
-
-      _wasOnline = online;
-      if (online) {
-        _prevPlayers = players;
-        _offlineStreak = 0;
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setStringList(kPrefPrevPlayers, players.toList());
-      }
-    } catch (_) {}
-  }
-
-  @override
-  Future<void> onDestroy(DateTime timestamp) async {}
-
-  @override
-  void onReceiveData(Object data) {}
-
-  Future<Map<String, dynamic>> _fetchStatus() async {
-    try {
-      final resp = await http
-          .get(Uri.parse('$kLdrpBase/players.json'))
-          .timeout(const Duration(seconds: 8));
-      if (resp.statusCode != 200) return {'online': false};
-      final list = jsonDecode(resp.body) as List<dynamic>;
-      final names = <String>[];
-      for (final p in list) {
-        if (p is Map) {
-          final n = p['name']?.toString();
-          if (n != null && n.isNotEmpty) names.add(n);
-        }
-      }
-      return {'online': true, 'players': names, 'player_count': names.length};
-    } catch (_) {
-      return {'online': false};
-    }
-  }
-
-  Future<void> _callWebhook(String url) async {
-    try {
-      await http.post(Uri.parse(url)).timeout(const Duration(seconds: 10));
-      FlutterForegroundTask.sendDataToMain({
-        'type': 'fivem_event',
-        'event': 'restart_attempt',
-        'message': 'I sent a restart command to the server.',
-      });
-    } catch (_) {
-      FlutterForegroundTask.sendDataToMain({
-        'type': 'fivem_event',
-        'event': 'restart_failed',
-        'message': 'Failed to reach the restart webhook.',
-      });
-    }
-  }
-}
 
 // ---------------------------------------------------------------------------
+// Background monitor (no-op stubs on Windows desktop builds)
+// ---------------------------------------------------------------------------
+
+@pragma('vm:entry-point')
+void startJarvisCallback() {
+  // Android FGS entrypoint — unused on Windows
+}
+
+/// Desktop-safe handler (does not depend on flutter_foreground_task types).
+class JarvisTaskHandler {
+  Future<void> onStart(DateTime timestamp, [dynamic starter]) async {}
+  void onRepeatEvent(DateTime timestamp, [dynamic starter]) {}
+  Future<void> onDestroy(DateTime timestamp, [dynamic starter]) async {}
+  void onReceiveData(dynamic data) {}
+}
+
+class TaskHandler {
+  Future<void> onStart(DateTime timestamp, [dynamic starter]) async {}
+  void onRepeatEvent(DateTime timestamp, [dynamic starter]) {}
+  Future<void> onDestroy(DateTime timestamp, [dynamic starter]) async {}
+  void onReceiveData(dynamic data) {}
+}
+
+class ServiceRequestSuccess {}
+
+class TaskStarter {}
+
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -1720,7 +1598,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   double _deviceRate = kDefaultDeviceRate;
   String _systemPromptExtra = '';
 
-  String _status = 'ONLINE · ${_provider.toUpperCase()}';
+  String _status = 'ONLINE';
   String _lastWords = '';
   String _toolNote = '';
   double _voiceEnergy = 0.25; // for waveform
