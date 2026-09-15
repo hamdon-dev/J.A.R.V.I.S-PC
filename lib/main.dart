@@ -192,11 +192,13 @@ class BiometricType {
 
 class LocalAuthentication {
   Future<bool> isDeviceSupported() async => false;
-  Future<bool> canCheckBiometrics() async => false;
+  // Match local_auth API: getter returning Future
+  Future<bool> get canCheckBiometrics async => false;
   Future<List<dynamic>> getAvailableBiometrics() async => [];
   Future<bool> authenticate({
     required String localizedReason,
     bool biometricOnly = false,
+    dynamic authMessages,
     dynamic options,
   }) async =>
       true;
@@ -205,7 +207,14 @@ class LocalAuthentication {
 class AuthenticationOptions {
   final bool biometricOnly;
   final bool stickyAuth;
-  const AuthenticationOptions({this.biometricOnly = false, this.stickyAuth = false});
+  final bool useErrorDialogs;
+  final bool sensitiveTransaction;
+  const AuthenticationOptions({
+    this.biometricOnly = false,
+    this.stickyAuth = false,
+    this.useErrorDialogs = true,
+    this.sensitiveTransaction = false,
+  });
 }
 
 class NotificationListenerService {
