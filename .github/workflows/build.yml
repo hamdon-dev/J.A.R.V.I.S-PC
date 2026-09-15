@@ -1,0 +1,82 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: Windows Release
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+        shell: bash
+
+      - name: Protect source
+        shell: bash
+        run: |
+          mkdir -p /tmp/jarvis_keep/tool
+          cp pubspec.yaml /tmp/jarvis_keep/pubspec.yaml
+          cp lib/main.dart /tmp/jarvis_keep/main.dart
+          cp tool/patch_windows.py /tmp/jarvis_keep/tool/patch_windows.py
+
+      - name: Generate Windows scaffold
+        shell: bash
+        run: |
+          rm -rf windows android ios linux macos web
+          flutter create \
+            --project-name jarvis_assistant \
+            --org org.londondistrict \
+            --platforms=windows \
+            .
+
+      - name: Restore source
+        shell: bash
+        run: |
+          cp /tmp/jarvis_keep/pubspec.yaml pubspec.yaml
+          mkdir -p lib tool
+          cp /tmp/jarvis_keep/main.dart lib/main.dart
+          cp /tmp/jarvis_keep/tool/patch_windows.py tool/patch_windows.py
+
+      - name: Patch Windows runner
+        shell: bash
+        run: python tool/patch_windows.py
+
+      - name: Flutter pub get
+        shell: bash
+        run: |
+          cat pubspec.yaml
+          flutter pub get
+
+      - name: Build Windows release
+        shell: bash
+        run: flutter build windows --release
+
+      - name: Stage Release folder
+        shell: bash
+        run: |
+          OUT="build/windows/x64/runner/Release"
+          if [ ! -d "$OUT" ]; then
+            OUT="build/windows/runner/Release"
+          fi
+          ls -la "$OUT"
+          cd "$OUT"
+          powershell -Command "Compress-Archive -Path * -DestinationPath '$GITHUB_WORKSPACE/jarvis-windows.zip' -Force"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: jarvis-windows
+          path: jarvis-windows.zip
+          retention-days: 30
