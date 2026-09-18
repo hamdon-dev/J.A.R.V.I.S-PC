@@ -302,87 +302,7 @@ class NotificationPriority {
 
 
 
-// --- Windows-safe stubs (no native mobile plugins) ---
-class AndroidIntent {
-  final String action;
-  final Map<String, dynamic>? arguments;
-  final String? type;
-  const AndroidIntent({required this.action, this.arguments, this.type});
-  Future<void> launch() async {}
-}
 
-class PermissionStatus {
-  final bool isGranted;
-  const PermissionStatus({this.isGranted = true});
-}
-class _Perm {
-  Future<PermissionStatus> get status async => const PermissionStatus();
-  Future<PermissionStatus> request() async => const PermissionStatus();
-}
-class Permission {
-  static final microphone = _Perm();
-  static final notification = _Perm();
-}
-
-class LocalAuthentication {
-  Future<bool> isDeviceSupported() async => false;
-  Future<bool> get canCheckBiometrics async => false;
-  Future<List<dynamic>> getAvailableBiometrics() async => [];
-  Future<bool> authenticate({
-    required String localizedReason,
-    bool biometricOnly = false,
-    dynamic authMessages,
-    dynamic options,
-  }) async => true;
-}
-class AuthenticationOptions {
-  final bool biometricOnly, stickyAuth, useErrorDialogs, sensitiveTransaction;
-  const AuthenticationOptions({
-    this.biometricOnly = false,
-    this.stickyAuth = false,
-    this.useErrorDialogs = true,
-    this.sensitiveTransaction = false,
-  });
-}
-
-class NotificationListenerService {
-  static Future<bool> isPermissionGranted() async => false;
-  static Future<bool> requestPermission() async => false;
-  static Stream<dynamic> get notificationsStream => const Stream.empty();
-}
-
-class FlutterForegroundTask {
-  static void initCommunicationPort() {}
-  static void setTaskHandler(dynamic h) {}
-  static void init({dynamic androidNotificationOptions, dynamic iosNotificationOptions, dynamic foregroundTaskOptions}) {}
-  static Future<dynamic> startService({int? serviceId, String? notificationTitle, String? notificationText, Function? callback}) async => null;
-  static Future<void> stopService() async {}
-  static Future<void> updateService({String? notificationTitle, String? notificationText}) async {}
-  static Future<bool> get isRunningService async => false;
-  static void addTaskDataCallback(Function cb) {}
-  static void removeTaskDataCallback(Function cb) {}
-  static void sendDataToMain(dynamic data) {}
-}
-class AndroidNotificationOptions {
-  final String channelId, channelName, channelDescription;
-  final dynamic channelImportance, priority;
-  final bool onlyAlertOnce;
-  const AndroidNotificationOptions({required this.channelId, required this.channelName, required this.channelDescription, this.channelImportance, this.priority, this.onlyAlertOnce = true});
-}
-class IOSNotificationOptions {
-  final bool showNotification, playSound;
-  const IOSNotificationOptions({this.showNotification = false, this.playSound = false});
-}
-class ForegroundTaskOptions {
-  final dynamic eventAction;
-  final bool autoRunOnBoot, autoRunOnMyPackageReplaced, allowWakeLock, allowWifiLock;
-  const ForegroundTaskOptions({this.eventAction, this.autoRunOnBoot = false, this.autoRunOnMyPackageReplaced = false, this.allowWakeLock = false, this.allowWifiLock = false});
-}
-class ForegroundTaskEventAction {
-  static dynamic repeat(int ms) => ms;
-}
-class NotificationChannelImportance { static const LOW = 0; }
-class NotificationPriority { static const LOW = 0; }
 class ServiceRequestSuccess {}
 class TaskStarter {}
 
@@ -395,7 +315,6 @@ class JarvisTaskHandler {
   Future<void> onDestroy(DateTime timestamp, [dynamic starter]) async {}
   void onReceiveData(dynamic data) {}
 }
-
 
 bool get kIsAndroid => !kIsWeb && Platform.isAndroid;
 bool get kIsIOS => !kIsWeb && Platform.isIOS;
@@ -5611,95 +5530,96 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
       } catch (_) {}
       if (!mounted) return;
       _safeHaptic();
-    final previousPollSeconds = _fivemPollSeconds;
-    await Navigator.of(context).push(PageRouteBuilder(
-      pageBuilder: (_, __, ___) => _SettingsScreen(
-        prefs: _prefs,
-        storage: _storage,
-        model: _model,
-        voice: _voice,
-        ttsMode: _ttsMode,
-        rate: _deviceRate,
-        continuous: _continuous,
-        toolsEnabled: _toolsEnabled,
-        selfImprove: _selfImprove,
-        fivemNotifyJoins: _fivemNotifyJoins,
-        fivemNotifyRestart: _fivemNotifyRestart,
-        fivemAutoFix: _fivemAutoFix,
-        fivemPollSeconds: _fivemPollSeconds,
-        serviceRunning: _serviceRunning,
-        memory: List.from(_memory),
-        dynamicTools: List.from(_dynamicTools),
-        systemPromptExtra: _systemPromptExtra,
-        notificationsEnabled: _notificationsEnabled,
-        onRequestNotifications: _requestNotificationPermission,
-        onClearKey: _clearApiKey,
-        onClearMemory: () async {
-          _memory.clear();
-          await _saveMemory();
-          if (mounted) setState(() {});
+      final previousPollSeconds = _fivemPollSeconds;
+      await Navigator.of(context).push(PageRouteBuilder(
+        pageBuilder: (_, __, ___) => _SettingsScreen(
+          prefs: _prefs,
+          storage: _storage,
+          model: _model,
+          voice: _voice,
+          ttsMode: _ttsMode,
+          rate: _deviceRate,
+          continuous: _continuous,
+          toolsEnabled: _toolsEnabled,
+          selfImprove: _selfImprove,
+          fivemNotifyJoins: _fivemNotifyJoins,
+          fivemNotifyRestart: _fivemNotifyRestart,
+          fivemAutoFix: _fivemAutoFix,
+          fivemPollSeconds: _fivemPollSeconds,
+          serviceRunning: _serviceRunning,
+          memory: List.from(_memory),
+          dynamicTools: List.from(_dynamicTools),
+          systemPromptExtra: _systemPromptExtra,
+          notificationsEnabled: _notificationsEnabled,
+          onRequestNotifications: _requestNotificationPermission,
+          onClearKey: _clearApiKey,
+          onClearMemory: () async {
+            _memory.clear();
+            await _saveMemory();
+            if (mounted) setState(() {});
+          },
+          onClearDynamicTools: () async {
+            _dynamicTools.clear();
+            await _saveDynamicTools();
+            if (mounted) setState(() {});
+          },
+          onStartMonitor: _startForegroundService,
+          onStopMonitor: _stopForegroundService,
+        ),
+        transitionsBuilder: (_, anim, __, child) {
+          return FadeTransition(opacity: anim, child: child);
         },
-        onClearDynamicTools: () async {
-          _dynamicTools.clear();
-          await _saveDynamicTools();
-          if (mounted) setState(() {});
-        },
-        onStartMonitor: _startForegroundService,
-        onStopMonitor: _stopForegroundService,
-      ),
-      transitionsBuilder: (_, anim, __, child) {
-        return FadeTransition(opacity: anim, child: child);
-      },
-      transitionDuration: const Duration(milliseconds: 280),
-    ));
-    final wasDiscord = _discordAutoReply;
-    _loadSettings();
-    _startSyncLoop();
-    await _loadDynamicTools();
-    await _tts.setSpeechRate(_deviceRate);
-    if (_fivemPollSeconds != previousPollSeconds) {
-      _initForegroundTask();
-      if (_serviceRunning) {
-        await _stopForegroundService();
-        await _startForegroundService();
+        transitionDuration: const Duration(milliseconds: 280),
+      ));
+      final wasDiscord = _discordAutoReply;
+      try {
+        await _loadSettings();
+      } catch (_) {}
+      _startSyncLoop();
+      try {
+        await _loadDynamicTools();
+      } catch (_) {}
+      try {
+        await _tts.setSpeechRate(_deviceRate);
+      } catch (_) {}
+      if (_fivemPollSeconds != previousPollSeconds) {
+        _initForegroundTask();
+        if (_serviceRunning) {
+          try {
+            await _stopForegroundService();
+            await _startForegroundService();
+          } catch (_) {}
+        }
+      }
+      try {
+        if (_notificationsEnabled ||
+            await NotificationListenerService.isPermissionGranted()) {
+          _notificationsEnabled = true;
+          _startNotificationListener();
+        }
+      } catch (_) {}
+      if (_discordAutoReply && !wasDiscord) {
+        _addLog('system', 'Discord unavailable mode is on. I will handle incoming DMs, sir.');
+      } else if (!_discordAutoReply && wasDiscord) {
+        _addLog('system', 'Discord unavailable mode is off.');
+      }
+      if (_continuous && _selfImprove) {
+        _startSelfImproveLoop();
+      } else {
+        _selfImproveTimer?.cancel();
+      }
+      if (mounted) setState(() {});
+    } catch (e) {
+      _addLog('system', 'Settings failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Settings error: $e'),
+            backgroundColor: kJarvisPanel,
+          ),
+        );
       }
     }
-    // Re-bind notification stream after settings (e.g. Discord mode toggled).
-    if (_notificationsEnabled ||
-        await NotificationListenerService.isPermissionGranted()) {
-      _notificationsEnabled = true;
-      _startNotificationListener();
-    }
-    if (_discordAutoReply && !wasDiscord) {
-      _addLog('system', 'Discord unavailable mode is on. I will handle incoming DMs, sir.');
-    } else if (!_discordAutoReply && wasDiscord) {
-      _addLog('system', 'Discord unavailable mode is off. DMs will only be announced.');
-    }
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    if (kIsAndroid) {
-      FlutterForegroundTask.removeTaskDataCallback(_onReceiveTaskData);
-    }
-    _notificationSubscription?.cancel();
-    _selfImproveTimer?.cancel();
-    _clockTimer?.cancel();
-    _energyDecay?.cancel();
-    _speechQueue.clear();
-    _pulse.dispose();
-    _reactor.dispose();
-    _scan.dispose();
-    _fadeIn.dispose();
-    _wave.dispose();
-    _tts.stop();
-    _player.dispose();
-    _speech.cancel();
-    _textController.dispose();
-    _textFocus.dispose();
-    _logScroll.dispose();
-    super.dispose();
   }
 
   void _submitText() {
@@ -5748,14 +5668,6 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     if (_apiKey == null || _apiKey!.isEmpty) return _ApiKeyScreen(onSave: _saveApiKey);
     if (_authChecked && _fingerprintEnabled && !_unlocked) return _buildLockScreen();
     return _buildMainScreen();
-    } catch (e) {
-      _addLog('system', 'Settings failed: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Settings error: $e'), backgroundColor: kJarvisPanel),
-        );
-      }
-    }
   }
 
   Widget _buildBootScreen() {
