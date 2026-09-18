@@ -301,10 +301,113 @@ class NotificationPriority {
 }
 
 
+
+// --- Windows-safe stubs (no native mobile plugins) ---
+class AndroidIntent {
+  final String action;
+  final Map<String, dynamic>? arguments;
+  final String? type;
+  const AndroidIntent({required this.action, this.arguments, this.type});
+  Future<void> launch() async {}
+}
+
+class PermissionStatus {
+  final bool isGranted;
+  const PermissionStatus({this.isGranted = true});
+}
+class _Perm {
+  Future<PermissionStatus> get status async => const PermissionStatus();
+  Future<PermissionStatus> request() async => const PermissionStatus();
+}
+class Permission {
+  static final microphone = _Perm();
+  static final notification = _Perm();
+}
+
+class LocalAuthentication {
+  Future<bool> isDeviceSupported() async => false;
+  Future<bool> get canCheckBiometrics async => false;
+  Future<List<dynamic>> getAvailableBiometrics() async => [];
+  Future<bool> authenticate({
+    required String localizedReason,
+    bool biometricOnly = false,
+    dynamic authMessages,
+    dynamic options,
+  }) async => true;
+}
+class AuthenticationOptions {
+  final bool biometricOnly, stickyAuth, useErrorDialogs, sensitiveTransaction;
+  const AuthenticationOptions({
+    this.biometricOnly = false,
+    this.stickyAuth = false,
+    this.useErrorDialogs = true,
+    this.sensitiveTransaction = false,
+  });
+}
+
+class NotificationListenerService {
+  static Future<bool> isPermissionGranted() async => false;
+  static Future<bool> requestPermission() async => false;
+  static Stream<dynamic> get notificationsStream => const Stream.empty();
+}
+
+class FlutterForegroundTask {
+  static void initCommunicationPort() {}
+  static void setTaskHandler(dynamic h) {}
+  static void init({dynamic androidNotificationOptions, dynamic iosNotificationOptions, dynamic foregroundTaskOptions}) {}
+  static Future<dynamic> startService({int? serviceId, String? notificationTitle, String? notificationText, Function? callback}) async => null;
+  static Future<void> stopService() async {}
+  static Future<void> updateService({String? notificationTitle, String? notificationText}) async {}
+  static Future<bool> get isRunningService async => false;
+  static void addTaskDataCallback(Function cb) {}
+  static void removeTaskDataCallback(Function cb) {}
+  static void sendDataToMain(dynamic data) {}
+}
+class AndroidNotificationOptions {
+  final String channelId, channelName, channelDescription;
+  final dynamic channelImportance, priority;
+  final bool onlyAlertOnce;
+  const AndroidNotificationOptions({required this.channelId, required this.channelName, required this.channelDescription, this.channelImportance, this.priority, this.onlyAlertOnce = true});
+}
+class IOSNotificationOptions {
+  final bool showNotification, playSound;
+  const IOSNotificationOptions({this.showNotification = false, this.playSound = false});
+}
+class ForegroundTaskOptions {
+  final dynamic eventAction;
+  final bool autoRunOnBoot, autoRunOnMyPackageReplaced, allowWakeLock, allowWifiLock;
+  const ForegroundTaskOptions({this.eventAction, this.autoRunOnBoot = false, this.autoRunOnMyPackageReplaced = false, this.allowWakeLock = false, this.allowWifiLock = false});
+}
+class ForegroundTaskEventAction {
+  static dynamic repeat(int ms) => ms;
+}
+class NotificationChannelImportance { static const LOW = 0; }
+class NotificationPriority { static const LOW = 0; }
+class ServiceRequestSuccess {}
+class TaskStarter {}
+
+@pragma('vm:entry-point')
+void startJarvisCallback() {}
+
+class JarvisTaskHandler {
+  Future<void> onStart(DateTime timestamp, [dynamic starter]) async {}
+  void onRepeatEvent(DateTime timestamp, [dynamic starter]) {}
+  Future<void> onDestroy(DateTime timestamp, [dynamic starter]) async {}
+  void onReceiveData(dynamic data) {}
+}
+
+
 bool get kIsAndroid => !kIsWeb && Platform.isAndroid;
 bool get kIsIOS => !kIsWeb && Platform.isIOS;
 bool get kIsDesktop => !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
 bool get kIsWindows => !kIsWeb && Platform.isWindows;
+
+void _safeHaptic([void Function()? fn]) {
+  try {
+    (fn ?? HapticFeedback.selectionClick)();
+  } catch (_) {}
+}
+
 
 Map<String, dynamic> sanitizeToolSchema(dynamic schema) {
   if (schema is! Map) return {'type': 'object', 'properties': {}};
@@ -322,30 +425,6 @@ Map<String, dynamic> sanitizeToolSchema(dynamic schema) {
 // ---------------------------------------------------------------------------
 // Background monitor (no-op stubs on Windows desktop builds)
 // ---------------------------------------------------------------------------
-
-@pragma('vm:entry-point')
-void startJarvisCallback() {
-  // Android FGS entrypoint — unused on Windows
-}
-
-/// Desktop-safe handler (does not depend on flutter_foreground_task types).
-class JarvisTaskHandler {
-  Future<void> onStart(DateTime timestamp, [dynamic starter]) async {}
-  void onRepeatEvent(DateTime timestamp, [dynamic starter]) {}
-  Future<void> onDestroy(DateTime timestamp, [dynamic starter]) async {}
-  void onReceiveData(dynamic data) {}
-}
-
-class TaskHandler {
-  Future<void> onStart(DateTime timestamp, [dynamic starter]) async {}
-  void onRepeatEvent(DateTime timestamp, [dynamic starter]) {}
-  Future<void> onDestroy(DateTime timestamp, [dynamic starter]) async {}
-  void onReceiveData(dynamic data) {}
-}
-
-class ServiceRequestSuccess {}
-
-class TaskStarter {}
 
 
 void main() {
@@ -1562,6 +1641,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   final AudioPlayer _player = AudioPlayer();
   final FlutterSecureStorage _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
+    wOptions: WindowsOptions(),
   );
 
   SharedPreferences? _prefs;
@@ -1760,7 +1840,12 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     await Permission.microphone.request();
     await Permission.notification.request();
     await _initTts();
-    await _initSpeech();
+    try {
+      await _initSpeech();
+    } catch (e) {
+      _speechReady = false;
+      _addLog('system', 'Speech init: $e');
+    }
     await _checkNotificationPermission();
 
     final isRunning = kIsAndroid
@@ -1773,9 +1858,16 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
 
     if (_continuous && _selfImprove) _startSelfImproveLoop();
 
-    if (_fingerprintEnabled) {
-      final ok = await _authenticate();
-      _unlocked = ok;
+    if (kIsDesktop) {
+      _fingerprintEnabled = false;
+      _unlocked = true;
+    } else if (_fingerprintEnabled) {
+      try {
+        final ok = await _authenticate();
+        _unlocked = ok;
+      } catch (_) {
+        _unlocked = true;
+      }
     } else {
       _unlocked = true;
     }
@@ -2676,7 +2768,9 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   }
 
   Future<void> _initSpeech() async {
-    final available = await _speech.initialize(
+    bool available = false;
+    try {
+    available = await _speech.initialize(
       onStatus: (s) {
         if (mounted && (s == 'done' || s == 'notListening')) {
           setState(() => _isListening = false);
@@ -2691,6 +2785,10 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
         }
       },
     );
+    } catch (e) {
+      available = false;
+      _addLog('system', 'Speech engine: $e');
+    }
     if (mounted) {
       setState(() {
         _speechReady = available;
@@ -2701,7 +2799,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
 
   Future<void> _startListening() async {
     if (!_speechReady || _isListening || _isProcessing) return;
-    HapticFeedback.lightImpact();
+    _safeHaptic(HapticFeedback.lightImpact);
     await _clearSpeech();
     if (!mounted) return;
     setState(() {
@@ -2758,7 +2856,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     if (cleaned.isEmpty) cleaned = phrase.trim();
     _lastHandledPhrase = phrase;
     _lastHandledAt = now;
-    HapticFeedback.selectionClick();
+    _safeHaptic();
     _processCommand(cleaned);
   }
 
@@ -2773,7 +2871,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   }
 
   void _toggleContinuous() {
-    HapticFeedback.mediumImpact();
+    _safeHaptic(HapticFeedback.mediumImpact);
     setState(() => _continuous = !_continuous);
     _prefs?.setBool(kPrefContinuous, _continuous);
     if (_continuous) {
@@ -2789,7 +2887,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   }
 
   void _clearContext() {
-    HapticFeedback.mediumImpact();
+    _safeHaptic(HapticFeedback.mediumImpact);
     _history.clear();
     _uiLog.clear();
     setState(() {
@@ -3782,7 +3880,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     if (!mounted) return;
     final dir = await _workspaceDir();
     final pub = await _workspacePublicDir();
-    HapticFeedback.selectionClick();
+    _safeHaptic();
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: kJarvisPanel,
@@ -5507,9 +5605,12 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
   }
 
   Future<void> _openSettings() async {
-    await _clearSpeech();
-    if (!mounted) return;
-    HapticFeedback.selectionClick();
+    try {
+      try {
+        await _clearSpeech();
+      } catch (_) {}
+      if (!mounted) return;
+      _safeHaptic();
     final previousPollSeconds = _fivemPollSeconds;
     await Navigator.of(context).push(PageRouteBuilder(
       pageBuilder: (_, __, ___) => _SettingsScreen(
@@ -5606,7 +5707,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     if (text.isEmpty || _isProcessing) return;
     _textController.clear();
     _textFocus.unfocus();
-    HapticFeedback.selectionClick();
+    _safeHaptic();
     // Stop any active listen session so typed input wins cleanly
     if (_isListening) {
       _speech.stop();
@@ -5617,7 +5718,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
 
   Future<void> _copyLog(String text) async {
     await Clipboard.setData(ClipboardData(text: text));
-    HapticFeedback.selectionClick();
+    _safeHaptic();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -5647,6 +5748,14 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
     if (_apiKey == null || _apiKey!.isEmpty) return _ApiKeyScreen(onSave: _saveApiKey);
     if (_authChecked && _fingerprintEnabled && !_unlocked) return _buildLockScreen();
     return _buildMainScreen();
+    } catch (e) {
+      _addLog('system', 'Settings failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Settings error: $e'), backgroundColor: kJarvisPanel),
+        );
+      }
+    }
   }
 
   Widget _buildBootScreen() {
@@ -5782,7 +5891,7 @@ class _JarvisHomeState extends State<JarvisHome> with TickerProviderStateMixin {
                   ],
                   GestureDetector(
                     onTap: () async {
-                      HapticFeedback.mediumImpact();
+                      _safeHaptic(HapticFeedback.mediumImpact);
                       final ok = await _authenticate();
                       if (!mounted) return;
                       setState(() {});
@@ -7764,7 +7873,7 @@ class _ApiKeyScreenState extends State<_ApiKeyScreen>
       _saving = true;
       _error = null;
     });
-    HapticFeedback.mediumImpact();
+    _safeHaptic(HapticFeedback.mediumImpact);
     await widget.onSave(v);
   }
 
